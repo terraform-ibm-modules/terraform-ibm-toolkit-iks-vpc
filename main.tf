@@ -1,0 +1,255 @@
+
+locals {
+  cluster_config_dir    = "${path.cwd}/.kube"
+  cluster_type_file     = "${path.cwd}/.tmp/cluster_type.val"
+  name_prefix           = var.name_prefix != "" ? var.name_prefix : var.resource_group_name
+  name_list             = [local.name_prefix, "cluster"]
+  cluster_name          = var.name != "" ? var.name : join("-", local.name_list)
+  tmp_dir               = "${path.cwd}/.tmp"
+  server_url            = data.ibm_container_vpc_cluster.config.public_service_endpoint_url
+  ingress_hostname      = data.ibm_container_vpc_cluster.config.ingress_hostname
+  tls_secret            = data.ibm_container_vpc_cluster.config.ingress_secret
+  cluster_type          = "kubernetes"
+  # value should be ocp4, ocp3, or kubernetes
+  cluster_type_code     = "kubernetes"
+  cluster_type_tag      = "iks"
+  cluster_version       = ""
+  vpc_subnet_count      = var.vpc_subnet_count
+  vpc_id                = !var.exists ? data.ibm_is_vpc.vpc[0].id : ""
+  vpc_subnets           = !var.exists ? var.vpc_subnets : []
+  security_group_id     = !var.exists ? data.ibm_is_vpc.vpc[0].default_security_group : ""
+  ipv4_cidr_blocks      = !var.exists ? data.ibm_is_subnet.vpc_subnet[*].ipv4_cidr_block : []
+  kms_config            = var.kms_enabled ? [{
+    instance_id      = var.kms_id
+    crk_id           = var.kms_key_id
+    private_endpoint = var.kms_private_endpoint
+  }] : []
+  policy_targets     = [
+    "kms",
+    "hs-crypto"
+  ]
+  login                 = var.login ? var.login : !var.disable_public_endpoint
+  cluster_config        = local.login ? data.ibm_container_cluster_config.cluster[0].config_file_path : ""
+  acl_rules             = [{
+    name = "allow-all-ingress"
+    action = "allow"
+    direction = "inbound"
+    source = "0.0.0.0/0"
+    destination = "0.0.0.0/0"
+  }, {
+    name = "allow-all-egress"
+    action = "allow"
+    direction = "outbound"
+    source = "0.0.0.0/0"
+    destination = "0.0.0.0/0"
+  }]
+}
+
+resource null_resource create_dirs {
+  triggers = {
+    always_run = timestamp()
+  }
+
+  provisioner "local-exec" {
+    command = "mkdir -p ${local.tmp_dir}"
+  }
+
+  provisioner "local-exec" {
+    command = "mkdir -p ${local.cluster_config_dir}"
+  }
+
+  provisioner "local-exec" {
+    command = "echo 'Sync value: ${var.sync}'"
+  }
+}
+
+resource null_resource print_resources {
+  provisioner "local-exec" {
+    command = "echo 'Resource group: ${var.resource_group_name}'"
+  }
+  provisioner "local-exec" {
+    command = "echo 'VPC name: ${var.vpc_name}'"
+  }
+}
+
+# separated to prevent circular dependency
+resource null_resource print_subnets {
+  provisioner "local-exec" {
+    command = "echo 'VPC subnet count: ${local.vpc_subnet_count}'"
+  }
+  provisioner "local-exec" {
+    command = "echo 'VPC subnets: ${jsonencode(local.vpc_subnets)}'"
+  }
+}
+
+data ibm_resource_group resource_group {
+  depends_on = [null_resource.print_resources]
+
+  name = var.resource_group_name
+}
+
+data ibm_is_vpc vpc {
+  count = !var.exists ? 1 : 0
+  depends_on = [null_resource.print_resources]
+
+  name  = var.vpc_name
+}
+
+data ibm_is_subnet vpc_subnet {
+  count = !var.exists ? var.vpc_subnet_count : 0
+
+  identifier = local.vpc_subnets[count.index].id
+}
+
+resource null_resource setup_acl_rules {
+  count = !var.exists && var.vpc_subnet_count > 0 ? 1 : 0
+
+  provisioner "local-exec" {
+    command = "${path.module}/scripts/setup-acl-rules.sh '${data.ibm_is_subnet.vpc_subnet[0].network_acl}' '${var.region}' '${var.resource_group_name}'"
+
+    environment = {
+      IBMCLOUD_API_KEY = var.ibmcloud_api_key
+      ACL_RULES = jsonencode(local.acl_rules)
+    }
+  }
+}
+
+# from https://cloud.ibm.com/docs/vpc?topic=vpc-service-endpoints-for-vpc
+resource ibm_is_security_group_rule default_inbound_ping {
+  count = !var.exists ? 1 : 0
+
+  group     = local.security_group_id
+  direction = "inbound"
+  remote    = "0.0.0.0/0"
+
+  icmp {
+    type = 8
+  }
+}
+
+resource ibm_is_security_group_rule default_inbound_http {
+  count = !var.exists ? 1 : 0
+
+  group     = local.security_group_id
+  direction = "inbound"
+  remote    = "0.0.0.0/0"
+
+  tcp {
+    port_min = 80
+    port_max = 80
+  }
+}
+
+resource ibm_is_security_group_rule default_inbound_https {
+  count = !var.exists ? 1 : 0
+
+  group     = local.security_group_id
+  direction = "inbound"
+  remote    = "0.0.0.0/0"
+
+  tcp {
+    port_min = 443
+    port_max = 443
+  }
+}
+
+resource ibm_container_vpc_cluster cluster {
+  count = !var.exists ? 1 : 0
+  depends_on = [null_resource.print_resources, null_resource.setup_acl_rules]
+
+  name              = local.cluster_name
+  vpc_id            = local.vpc_id
+  flavor            = var.flavor
+  worker_count      = var.worker_count
+  kube_version      = local.cluster_version
+  resource_group_id = data.ibm_resource_group.resource_group.id
+  disable_public_service_endpoint = var.disable_public_endpoint
+  wait_till         = "IngressReady"
+
+  zones {
+    name      = local.vpc_subnets[0].zone
+    subnet_id = local.vpc_subnets[0].id
+  }
+
+  dynamic "kms_config" {
+    for_each = local.kms_config
+
+    content {
+      instance_id      = kms_config.value["instance_id"]
+      crk_id           = kms_config.value["crk_id"]
+      private_endpoint = kms_config.value["private_endpoint"]
+    }
+  }
+}
+
+resource ibm_container_vpc_worker_pool cluster_pool {
+  count             = !var.exists ? local.vpc_subnet_count - 1 : 0
+
+  cluster           = ibm_container_vpc_cluster.cluster[0].id
+  worker_pool_name  = "pool-${format("%02s", count.index + 2)}"
+  flavor            = var.flavor
+  vpc_id            = local.vpc_id
+  worker_count      = var.worker_count
+  resource_group_id = data.ibm_resource_group.resource_group.id
+
+  zones {
+    name      = local.vpc_subnets[count.index + 1].zone
+    subnet_id = local.vpc_subnets[count.index + 1].id
+  }
+}
+
+resource ibm_is_security_group_rule rule_tcp_k8s {
+  count     = !var.exists ? local.vpc_subnet_count : 0
+
+  group     = local.security_group_id
+  direction = "inbound"
+
+  tcp {
+    port_min = 30000
+    port_max = 32767
+  }
+}
+
+data ibm_container_vpc_cluster config {
+  depends_on = [ibm_container_vpc_cluster.cluster, null_resource.create_dirs, ibm_is_security_group_rule.rule_tcp_k8s]
+
+  name              = local.cluster_name
+  alb_type          = var.disable_public_endpoint ? "private" : "public"
+  resource_group_id = data.ibm_resource_group.resource_group.id
+}
+
+resource "null_resource" "list_tmp" {
+  depends_on = [null_resource.create_dirs]
+
+  triggers = {
+    always_run = timestamp()
+  }
+
+  provisioner "local-exec" {
+    command = "ls ${local.tmp_dir}"
+  }
+}
+
+
+data ibm_container_cluster_config cluster_admin {
+  count = local.login ? 1 : 0
+  depends_on        = [data.ibm_container_vpc_cluster.config, null_resource.list_tmp]
+
+  cluster_name_id   = local.cluster_name
+  admin             = true
+  resource_group_id = data.ibm_resource_group.resource_group.id
+  config_dir        = local.cluster_config_dir
+}
+
+data ibm_container_cluster_config cluster {
+  count = local.login ? 1 : 0
+  depends_on        = [
+    data.ibm_container_vpc_cluster.config,
+    null_resource.list_tmp,
+    data.ibm_container_cluster_config.cluster_admin
+  ]
+
+  cluster_name_id   = local.cluster_name
+  resource_group_id = data.ibm_resource_group.resource_group.id
+  config_dir        = local.cluster_config_dir
+}
