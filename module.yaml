@@ -2,10 +2,13 @@ name: ibm-iks-vpc
 alias: cluster
 type: terraform
 description: Provisions an IBM Cloud IKS cluster
+interfaces:
+  - github.com/cloud-native-toolkit/automation-modules#cluster
+  - github.com/cloud-native-toolkit/automation-modules#sync
 tags:
-    - iks
-    - cluster
-    - vpc
+  - iks
+  - cluster
+  - vpc
 versions:
 - platforms:
     - kubernetes

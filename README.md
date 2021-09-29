@@ -1,7 +1,6 @@
-# IBM Cloud OpenShift VPC cluster
+# IBM Cloud Kubernetes VPC cluster
 
-Provisions an IBM Cloud OpenShift VPC cluster using a provided VPC instance and COS
-instance.
+Provisions an IBM Cloud Kubernetes VPC cluster using a provided VPC instance.
 
 ## Software dependencies
 
@@ -21,7 +20,6 @@ The module depends on the following software components:
 
 This module makes use of the output from other modules:
 
-- Object Storage - github.com/cloud-native-toolkit/terraform-ibm-object-storage.git
 - VPC - github.com/cloud-native-toolkit/terraform-ibm-vpc.git
 - Subnet - github.com/cloud-native-toolkit/terraform-ibm-vpc.git
 
@@ -29,19 +27,17 @@ This module makes use of the output from other modules:
 
 ```hcl-terraform
 module "cluster" {
-  source = "github.com/cloud-native-toolkit/terraform-ibm-ocp-vpc.git?ref=v1.2.5"
+  source = "github.com/cloud-native-toolkit/terraform-ibm-iks-vpc.git"
 
   resource_group_name = var.resource_group_name
   region              = var.region
   ibmcloud_api_key    = var.ibmcloud_api_key
   name                = var.cluster_name
   worker_count        = var.worker_count
-  ocp_version         = var.ocp_version
   exists              = var.cluster_exists
   name_prefix         = var.name_prefix
   vpc_name            = module.vpc.name
   vpc_subnet_count    = module.subnet.subnet_count
   vpc_subnets         = module.subnet.subnets
-  cos_id              = module.cos.id
 }
 ```
