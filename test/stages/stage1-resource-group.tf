@@ -3,5 +3,4 @@ module "resource_group" {
 
   resource_group_name = var.resource_group_name
   ibmcloud_api_key    = var.ibmcloud_api_key
-  provision           = false
 }
