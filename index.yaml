@@ -17,15 +17,168 @@ versions:
       - id: resource-group
         refs:
           - source: github.com/cloud-native-toolkit/terraform-ibm-resource-group
-            version: ">= 1.0.0"
+            version: '>= 1.0.0'
       - id: subnets
         refs:
           - source: github.com/cloud-native-toolkit/terraform-ibm-vpc-subnets
-            version: ">= 1.8.0"
+            version: '>= 1.8.0'
       - id: kms_key
         refs:
           - source: github.com/cloud-native-toolkit/terraform-ibm-kms-key
-            version: ">= 1.0.0"
+            version: '>= 1.0.0'
+        optional: true
+      - id: sync
+        refs: []
+        interface: github.com/cloud-native-toolkit/automation-modules#sync
+        optional: true
+    variables:
+      - name: resource_group_name
+        type: string
+        description: >-
+          The name of the IBM Cloud resource group where the cluster will be
+          created/can be found.
+        moduleRef:
+          id: resource-group
+          output: name
+      - name: region
+        type: string
+        description: The IBM Cloud region where the cluster will be/has been installed.
+        scope: global
+      - name: ibmcloud_api_key
+        type: string
+        description: The IBM Cloud api token
+        scope: global
+      - name: name
+        type: string
+        description: The name of the cluster that will be created within the resource group
+        default: ''
+        scope: module
+      - name: worker_count
+        type: number
+        description: >-
+          The number of worker nodes that should be provisioned for classic
+          infrastructure
+        default: '3'
+        scope: global
+      - name: flavor
+        type: string
+        description: The machine type that will be provisioned for classic infrastructure
+        default: bx2.4x16
+      - name: exists
+        type: bool
+        description: Flag indicating if the cluster already exists (true or false)
+        default: false
+        scope: module
+      - name: disable_public_endpoint
+        type: bool
+        description: Flag indicating that the public endpoint should be disabled
+        default: false
+      - name: name_prefix
+        type: string
+        description: >-
+          The prefix name for the service. If not provided it will default to
+          the resource group name
+        default: ''
+        scope: global
+      - name: vpc_name
+        type: string
+        description: Name of the VPC instance that will be used
+        moduleRef:
+          id: subnets
+          output: vpc_name
+      - name: vpc_subnet_count
+        type: number
+        description: Number of vpc subnets
+        moduleRef:
+          id: subnets
+          output: count
+      - name: vpc_subnets
+        type: |-
+          list(object({
+              label = string
+              id    = string
+              zone  = string
+            }))
+        description: List of subnets with labels
+        moduleRef:
+          id: subnets
+          output: subnets
+      - name: kms_enabled
+        type: bool
+        description: Flag indicating that kms encryption should be enabled for this cluster
+        default: false
+      - name: kms_id
+        type: string
+        description: The crn of the KMS instance that will be used to encrypt the cluster.
+        default: 'null'
+        moduleRef:
+          id: kms_key
+          output: kms_id
+        optional: true
+      - name: kms_key_id
+        type: string
+        description: >-
+          The id of the root key in the KMS instance that will be used to
+          encrypt the cluster.
+        default: 'null'
+        moduleRef:
+          id: kms_key
+          output: id
+        optional: true
+      - name: kms_private_endpoint
+        type: bool
+        description: >-
+          Flag indicating that the private endpoint should be used to connect
+          the KMS system to the cluster.
+        default: true
+      - name: login
+        type: bool
+        description: >-
+          Flag indicating that after the cluster is provisioned, the module
+          should log into the cluster
+        default: false
+      - name: sync
+        type: string
+        description: Value used to order dependencies
+        default: ''
+        moduleRef:
+          id: sync
+          output: sync
+    version: v1.0.2
+    outputs:
+      - name: id
+        description: ID of the cluster.
+      - name: name
+        description: Name of the cluster.
+      - name: resource_group_name
+        description: Name of the resource group containing the cluster.
+      - name: region
+        description: Region containing the cluster.
+      - name: config_file_path
+        description: Path to the config file for the cluster.
+      - name: platform
+        type:
+          lines:
+            - local.cluster_type
+        sensitive: true
+        description: Configuration values for the cluster platform
+      - name: sync
+        description: Value used to sync downstream modules
+  - platforms:
+      - kubernetes
+    dependencies:
+      - id: resource-group
+        refs:
+          - source: github.com/cloud-native-toolkit/terraform-ibm-resource-group
+            version: '>= 1.0.0'
+      - id: subnets
+        refs:
+          - source: github.com/cloud-native-toolkit/terraform-ibm-vpc-subnets
+            version: '>= 1.8.0'
+      - id: kms_key
+        refs:
+          - source: github.com/cloud-native-toolkit/terraform-ibm-kms-key
+            version: '>= 1.0.0'
         optional: true
       - id: sync
         refs: []
@@ -37,7 +190,9 @@ versions:
           id: resource-group
           output: name
         type: string
-        description: The name of the IBM Cloud resource group where the cluster will be created/can be found.
+        description: >-
+          The name of the IBM Cloud resource group where the cluster will be
+          created/can be found.
       - name: vpc_name
         moduleRef:
           id: subnets
@@ -68,20 +223,24 @@ versions:
         optional: true
         type: string
         description: The crn of the KMS instance that will be used to encrypt the cluster.
-        default: "null"
+        default: 'null'
       - name: kms_key_id
         moduleRef:
           id: kms_key
           output: id
         optional: true
         type: string
-        description: The id of the root key in the KMS instance that will be used to encrypt the cluster.
-        default: "null"
+        description: >-
+          The id of the root key in the KMS instance that will be used to
+          encrypt the cluster.
+        default: 'null'
       - name: name_prefix
         scope: global
         type: string
-        description: The prefix name for the service. If not provided it will default to the resource group name
-        default: ""
+        description: >-
+          The prefix name for the service. If not provided it will default to
+          the resource group name
+        default: ''
         optional: true
       - name: region
         scope: global
@@ -95,12 +254,14 @@ versions:
         scope: module
         type: string
         description: The name of the cluster that will be created within the resource group
-        default: ""
+        default: ''
         optional: true
       - name: worker_count
         scope: global
         type: number
-        description: The number of worker nodes that should be provisioned for classic infrastructure
+        description: >-
+          The number of worker nodes that should be provisioned for classic
+          infrastructure
         default: 3
         optional: true
       - name: exists
@@ -115,7 +276,7 @@ versions:
           output: sync
         type: string
         description: Value used to order dependencies
-        default: ""
+        default: ''
         optional: true
       - name: flavor
         type: string
@@ -134,12 +295,16 @@ versions:
         optional: true
       - name: kms_private_endpoint
         type: bool
-        description: Flag indicating that the private endpoint should be used to connect the KMS system to the cluster.
+        description: >-
+          Flag indicating that the private endpoint should be used to connect
+          the KMS system to the cluster.
         default: true
         optional: true
       - name: login
         type: bool
-        description: Flag indicating that after the cluster is provisioned, the module should log into the cluster
+        description: >-
+          Flag indicating that after the cluster is provisioned, the module
+          should log into the cluster
         default: false
         optional: true
     version: v1.0.1
@@ -164,15 +329,15 @@ versions:
       - id: resource-group
         refs:
           - source: github.com/cloud-native-toolkit/terraform-ibm-resource-group
-            version: ">= 1.0.0"
+            version: '>= 1.0.0'
       - id: subnets
         refs:
           - source: github.com/cloud-native-toolkit/terraform-ibm-vpc-subnets
-            version: ">= 1.8.0"
+            version: '>= 1.8.0'
       - id: kms_key
         refs:
           - source: github.com/cloud-native-toolkit/terraform-ibm-kms-key
-            version: ">= 1.0.0"
+            version: '>= 1.0.0'
         optional: true
       - id: sync
         refs: []
@@ -184,7 +349,9 @@ versions:
           id: resource-group
           output: name
         type: string
-        description: The name of the IBM Cloud resource group where the cluster will be created/can be found.
+        description: >-
+          The name of the IBM Cloud resource group where the cluster will be
+          created/can be found.
       - name: vpc_name
         moduleRef:
           id: subnets
@@ -215,20 +382,24 @@ versions:
         optional: true
         type: string
         description: The crn of the KMS instance that will be used to encrypt the cluster.
-        default: "null"
+        default: 'null'
       - name: kms_key_id
         moduleRef:
           id: kms_key
           output: id
         optional: true
         type: string
-        description: The id of the root key in the KMS instance that will be used to encrypt the cluster.
-        default: "null"
+        description: >-
+          The id of the root key in the KMS instance that will be used to
+          encrypt the cluster.
+        default: 'null'
       - name: name_prefix
         scope: global
         type: string
-        description: The prefix name for the service. If not provided it will default to the resource group name
-        default: ""
+        description: >-
+          The prefix name for the service. If not provided it will default to
+          the resource group name
+        default: ''
         optional: true
       - name: region
         scope: global
@@ -242,12 +413,14 @@ versions:
         scope: module
         type: string
         description: The name of the cluster that will be created within the resource group
-        default: ""
+        default: ''
         optional: true
       - name: worker_count
         scope: global
         type: number
-        description: The number of worker nodes that should be provisioned for classic infrastructure
+        description: >-
+          The number of worker nodes that should be provisioned for classic
+          infrastructure
         default: 3
         optional: true
       - name: exists
@@ -262,7 +435,7 @@ versions:
           output: sync
         type: string
         description: Value used to order dependencies
-        default: ""
+        default: ''
         optional: true
       - name: flavor
         type: string
@@ -281,12 +454,16 @@ versions:
         optional: true
       - name: kms_private_endpoint
         type: bool
-        description: Flag indicating that the private endpoint should be used to connect the KMS system to the cluster.
+        description: >-
+          Flag indicating that the private endpoint should be used to connect
+          the KMS system to the cluster.
         default: true
         optional: true
       - name: login
         type: bool
-        description: Flag indicating that after the cluster is provisioned, the module should log into the cluster
+        description: >-
+          Flag indicating that after the cluster is provisioned, the module
+          should log into the cluster
         default: false
         optional: true
     version: v1.0.0
@@ -310,19 +487,5 @@ versions:
       - ocp3
       - ocp4
     dependencies: []
-    #    - id: cluster
-    #      refs:
-    #        - source: github.com/ibm-garage-cloud/terraform-ibm-container-platform
-    #          version: ">= 1.7.0"
-    #        - source: github.com/ibm-garage-cloud/terraform-k8s-ocp-cluster
-    #          version: ">= 2.0.0"
-    #    - id: namespace
-    #      refs:
-    #        - source: github.com/ibm-garage-cloud/terraform-k8s-namespace
-    #          version: ">= 2.1.0"
-    #    - id: dashboard
-    #      refs:
-    #        - source: github.com/ibm-garage-cloud/terraform-k8s-dashboard
-    #          version: ">= 1.6.0"
     variables: []
     version: v0.0.0
