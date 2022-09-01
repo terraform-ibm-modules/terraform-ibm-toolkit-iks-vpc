@@ -25,6 +25,8 @@ This module makes use of the output from other modules:
 
 ## Example usage
 
+[Refer test cases for more details](test/stages/stage2-cluster.tf)
+
 ```hcl-terraform
 module "cluster" {
   source = "github.com/cloud-native-toolkit/terraform-ibm-iks-vpc.git"
